@@ -15,10 +15,10 @@ main.exe
 Server will run on port 9991
 
 ### Write to channel
-GET localhost:9991/wc/ThisIsMyChannel
+GET localhost:9991/WriteToChannel/ThisIsMyChannel
 
 ### Read first message
-GET localhost:9991/rc/ThisIsMyChannel
+GET localhost:9991/ReadFromChannel/ThisIsMyChannel
 
 ### Read specific message
 GET localhost:9991/rc/ThisIsMyChannel/12345

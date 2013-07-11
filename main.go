@@ -9,21 +9,35 @@ import (
     "encoding/binary"
     "strings"
     "strconv"
+    "io"
+    "io/ioutil"
 )
 
+const lenPath = len("/WriteToChannel/")
+const readLenPath = len("/ReadFromChannel/")
+const channelPath = "data/channels/"
+
+
 func handler(w http.ResponseWriter, r *http.Request) {
-    fmt.Fprintf(w, "Hi there, I love %s!", r.Method)
+    fmt.Fprintf(w, "Ragnarok is online. \n\nChannels: \n")
+
+    files, _ := ioutil.ReadDir(channelPath) 
+    for _, value := range files {
+    	channelName := strings.Split(value.Name(), ".")[0]
+    	fmt.Fprintf(w, "%s \n", channelName)
+	}
 }
 
-const lenPath = len("/wc/")
-const readLenPath = len("/rc/")
 
-func channelHandler(w http.ResponseWriter, r *http.Request) {
+
+func writeToChannelHandler(w http.ResponseWriter, r *http.Request) {
 	channelName := r.URL.Path[lenPath:]
 
-	fo, err := os.OpenFile(channelName + ".txt", syscall.O_APPEND | syscall.O_CREAT , os.ModeAppend)
-	                            
-    
+	fo, err := os.OpenFile(channelPath + channelName + ".channel", syscall.O_APPEND | syscall.O_CREAT , os.ModeAppend)
+	fi, _ := fo.Stat()
+
+	startOffset := fi.Size()
+	
     if err != nil { panic(err) }
 
     defer func() {
@@ -32,15 +46,17 @@ func channelHandler(w http.ResponseWriter, r *http.Request) {
         }
     }()
 
-     // make a write buffer
     fw := bufio.NewWriter(fo)
     
-    bytesToWrite := []byte("This text was written \n\n in the channel " + channelName)
+
+
+    bytesToWrite := make([]byte, r.ContentLength)
+    fmt.Println("ContentLength: %v", r.ContentLength)
+	numbOfBodyBytes, err := io.ReadFull(r.Body, bytesToWrite)
+	fmt.Println("numbOfBodyBytes: %v", numbOfBodyBytes)
     
     buf := make([]byte, binary.MaxVarintLen64)
 	binary.PutUvarint(buf, uint64(len(bytesToWrite)))
-
-	fmt.Fprintf(w, "%v", uint64(len(bytesToWrite)))	
 
     if _, err := fw.Write(buf); err != nil {
         panic(err)
@@ -51,6 +67,8 @@ func channelHandler(w http.ResponseWriter, r *http.Request) {
     }
 
     if err = fw.Flush(); err != nil { panic(err) }
+
+    fmt.Fprintf(w, "%v", startOffset)	
 }
 
 func getOffset(urlParts []string) int64 {
@@ -67,7 +85,7 @@ func getOffset(urlParts []string) int64 {
 	return 0
 }
 
-func readChannelHandler(w http.ResponseWriter, r *http.Request) {
+func readFromChannelHandler(w http.ResponseWriter, r *http.Request) {
 	extraUrlPaths := strings.Split(r.URL.Path[readLenPath:], "/")
 	if len(extraUrlPaths) == 0	{
 		fmt.Fprintf(w, "No channel selected")
@@ -77,36 +95,37 @@ func readChannelHandler(w http.ResponseWriter, r *http.Request) {
 	channelName := extraUrlPaths[0]
 	offset := getOffset(extraUrlPaths);
 
-	fmt.Fprintf(w, "Channel: %s", channelName)
-	fmt.Fprintf(w, "  Offset: %v", offset)
-
-	fo, err := os.Open(channelName + ".txt")
+	fo, err := os.Open(channelPath + channelName + ".channel")
 	if err != nil { panic(err) }
 
 	buf := make([]byte, binary.MaxVarintLen64)
 	n, err := fo.ReadAt(buf, offset)
-	fmt.Printf("%v", n);
-	if err != nil { fmt.Fprintf(w, "offset is way off") 
+	fmt.Println("n: %v", n)
+	if err != nil { 
+		fmt.Fprintf(w, "offset is way off") 
 		return
 	}
 
 	myInt, _ := binary.Uvarint(buf)
 
-	fmt.Fprintf(w, "   Next offset: %v", myInt + uint64(binary.MaxVarintLen64) + uint64(offset))
-
 	restBuf := make([]byte, myInt)
 	nrest, err := fo.ReadAt(restBuf, offset + binary.MaxVarintLen64)
+	fmt.Println("nrest: %v", nrest)
 
-	fmt.Fprintf(w, "   Data: %s", string(restBuf))
-	
-	fmt.Printf("%v", nrest);
-
+	fmt.Fprintf(w, "%v", restBuf)
 }
 
 
 func main() {
-	http.HandleFunc("/wc/", channelHandler)
-	http.HandleFunc("/rc/", readChannelHandler)
+	http.HandleFunc("/WriteToChannel/", writeToChannelHandler)
+	http.HandleFunc("/ReadFromChannel/", readFromChannelHandler)
     http.HandleFunc("/", handler)
+
+    err := os.MkdirAll(channelPath, os.ModeDir)
+    if err != nil { 
+    	fmt.Println("Data dir could not be created") 		
+	}
+    fmt.Println("Ragnarok channels are running on 9991")
     http.ListenAndServe(":9991", nil)
+
 }
